@@ -33,13 +33,26 @@ Fill this in as you go. Bullet points are fine — be specific, not long.
 
 ## Defect 2: Proxy cannot reach the backend
 
+
 ### Symptom / error output
+- after fixing the build, /nginx-health passed but /api/info failed
+- test-runner: "TEST RUNNER CRASHED: HTTP Error 502: Bad Gateway"
 
 ### How I diagnosed it
+- looked at the proxy logs in the run-tests.sh output:
+  "connect() failed (111: Connection refused) while connecting to upstream ... upstream: "http://127.0.0.1:8080/api/info""
+- so nginx itself was fine (the health check it answers on its own passed), but it was sending requests to 127.0.0.1:8080
+- checked proxy/nginx.conf: the upstream was `server 127.0.0.1:8080;`
 
 ### Root cause
+- inside a container, 127.0.0.1 is that container itself
+- the backend runs in its own container, so the proxy was trying to reach port 8080 on itself, where nothing listens
+- since backend publishes 8080 to the host. but from inside the proxy container that's a different localhost
 
 ### Fix
+- file changed: proxy/nginx.conf
+- changed the upstream to `server backend:8080;`. "backend" is the compose service name, Docker's DNS resolves it to the backend container on the compose network, and 8080 is the port the backend listens on inside its container
+- checked: the error now shows `upstream: "http://172.20.0.2:8080/api/info"`, so nginx goes to the backend container. it still got connection refused, but that's a different problem (defect 3)
 
 ---
 
