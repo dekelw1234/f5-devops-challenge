@@ -112,7 +112,12 @@ Other options:
 
 Optional. Answer only the ones you got to — number them, skip the rest.
 
->
+>1. Smaller proxy image
+- before: `ubuntu:24.04` + nginx, curl, htop, vim, git: 443MB 
+- after: `nginx:1.27-alpine` with only our nginx.conf copied in: 73.6MB
+- removed curl, htop, vim and git: none of them are needed for nginx to run.
+- pinned the version (1.27) instead of latest, so the build doesn't change on its own
+- measured with `docker images`, tests still pass
 
 ---
 
