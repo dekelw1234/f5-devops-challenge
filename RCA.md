@@ -122,3 +122,6 @@ Optional. Answer only the ones you got to — number them, skip the rest.
 ---
 
 ## Anything you would do differently with more time
+- add a healthcheck to the proxy and make test-runner wait for it.
+- add a `.gitattributes` with `*.sh text eol=lf`, so a clone on Windows can't break the script with CRLF line endings
+- CI runs twice for a branch with an open PR (push + pull_request). I'd limit push to main
