@@ -84,12 +84,27 @@ Other options:
 ## Defect 4: CI pipeline fails
 
 ### Symptom / error output
+- GitHub Actions failed on the "Execute test suite" step:
+  `./scripts/run-tests.sh: Permission denied`, `Process completed with exit code 126`
+- 126 means the file was found but couldn't be executed
 
 ### How I diagnosed it
+- saw the same thing locally right after cloning: `./scripts/run-tests.sh` gave Permission denied
+- checked what git stores for the file: `git ls-files -s scripts/run-tests.sh` showed `100644`, no execute bit
 
 ### Root cause
+- the script was committed without the execute bit
+- CI does a fresh checkout, so it gets the file exactly as git stores it, and `./` needs execute permission
+- it can work on one dev machine after a local chmod, but that's not saved anywhere, so the next clone breaks again
 
 ### Fix
+- file changed: scripts/run-tests.sh (only its mode, not its content)
+- `git update-index --chmod=+x scripts/run-tests.sh`, so git now stores it as `100755`
+- checked: `git ls-files -s` shows `100755`, and CI is green
+
+Other options:
+- adding `chmod +x` as a step in ci.yml: CI would pass, but anyone who clones still gets Permission denied
+- changing ci.yml to `bash scripts/run-tests.sh`: also works, but the README says to run `./scripts/run-tests.sh`, so the file itself should be executable
 
 ---
 
