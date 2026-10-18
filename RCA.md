@@ -5,15 +5,14 @@ Fill this in as you go. Bullet points are fine — be specific, not long.
 ---
 
 ## Defect 1: Proxy image fails to build
-
 ### Symptom / error output
 - run-tests.sh failed while building the proxy image, exit code 100
 - the last lines only said apt-get failed: "E: Sub-process /usr/bin/dpkg returned an error code (1)"
 
 ### How I diagnosed it
-- saved the full output with `./scripts/run-tests.sh 2>&1 | tee task1.log` so I could read all of it
+- - ran `./scripts/run-tests.sh` and scrolled up through the whole output
 - a few lines above the error, dpkg was asking a question:
-  "Configuration file '/etc/nginx/nginx.conf' ... File on system created by you or by a script ... (Y/I/N/O/D/Z) [default=N] ?"
+  "Configuration file '/etc/nginx/nginx.conf' , File on system created by you or by a script , (Y/I/N/O/D/Z) [default=N] ?"
 - then looked at proxy/Dockerfile and saw the COPY of nginx.conf happens before nginx is installed
 
 ### Root cause
@@ -32,8 +31,6 @@ Fill this in as you go. Bullet points are fine — be specific, not long.
 ---
 
 ## Defect 2: Proxy cannot reach the backend
-
-
 ### Symptom / error output
 - after fixing the build, /nginx-health passed but /api/info failed
 - test-runner: "TEST RUNNER CRASHED: HTTP Error 502: Bad Gateway"
@@ -47,7 +44,7 @@ Fill this in as you go. Bullet points are fine — be specific, not long.
 ### Root cause
 - inside a container, 127.0.0.1 is that container itself
 - the backend runs in its own container, so the proxy was trying to reach port 8080 on itself, where nothing listens
-- since backend publishes 8080 to the host. but from inside the proxy container that's a different localhost
+- 127.0.0.1:8080 works from the host because backend publishes 8080 there, but inside the proxy container it's the proxy itselft
 
 ### Fix
 - file changed: proxy/nginx.conf
@@ -57,14 +54,30 @@ Fill this in as you go. Bullet points are fine — be specific, not long.
 ---
 
 ## Defect 3: Tests still fail after fixing defect 2
-
 ### Symptom / error output
+- after the routing fix, /api/info still failed with "HTTP Error 502: Bad Gateway"
+- but now the proxy log showed the right address: `upstream: "http://172.20.0.2:8080/api/info"`, still "connect() failed (111: Connection refused)"
+- so nginx reached the backend container, but nothing was listening there yet
 
 ### How I diagnosed it
+- compared the timing in the run-tests.sh output: the test-runner sent its request while the backend was still printing "loaded config key:" lines, before "Backend listening on port 8080"
+- read backend/app.py: load_config() sleeps CONFIG_FETCH_SECONDS (default 2) for each of the 4 config keys, and only after that it creates the HTTP server. so the backend needs about 8 seconds before it can answer anything
+- docker-compose.yml used plain `depends_on: - backend`, which only waits for the container to be started, not for the app inside to be ready
 
 ### Root cause
+- race condition between startup order and readiness
+- compose started the proxy and test-runner as soon as the backend container started, and the tests (timeout=3, single attempt) ran during the ~8 seconds when the backend wasn't listening yet
+- on a fast or slow machine the result could change, which is why it has to be fixed by waiting for the backend's state and not by timing
 
 ### Fix, and why I chose it over the alternatives
+- file changed: docker-compose.yml
+- added a healthcheck to the backend that checks its own /health with python (the image has no curl)
+- the proxy now waits for the backend to be healthy (`condition: service_healthy`) instead of just started
+- checked: tests start only after the backend is listening. ran it 5 times, all passed
+
+Other options:
+- `CONFIG_FETCH_SECONDS=0`: passes, but changes the third-party service and hides the problem
+- `sleep` in the script: waits for time, not for the backend. can still fail on a slow machine
 
 ---
 
